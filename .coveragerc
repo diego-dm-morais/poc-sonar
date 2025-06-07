@@ -1,0 +1,5 @@
+[run]
+module = True
+source = app
+omit =
+    tests/*

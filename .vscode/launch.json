@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI: Debugger Private",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload"
+      ],
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://testuser:testpass@localhost:5432/testdb"
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Pytest: Debugger Private",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-vv",
+      ],
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}",
+        "DATABASE_URL": "postgresql://testuser:testpass@localhost:5432/testdb"
+      },
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
