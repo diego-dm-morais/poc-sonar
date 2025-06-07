@@ -15,7 +15,7 @@ def test_client():
 def mock_db_connection():
     """Fixture para mockar a conexão com o banco de dados."""
     with patch("app.main.get_db_connection") as mock:
-        mock.return_value = MagicMock()  # Fornece um mock padrão
+        mock.return_value = MagicMock()
         yield mock
 
 

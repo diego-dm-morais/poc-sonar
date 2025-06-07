@@ -30,7 +30,9 @@
         "PYTHONPATH": "${workspaceFolder}",
         "DATABASE_URL": "postgresql://testuser:testpass@localhost:5432/testdb"
       },
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "db-up",
+      "postDebugTask": "db-down"
     }
   ]
 }

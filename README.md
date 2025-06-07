@@ -62,12 +62,12 @@ Configure os seguintes parâmetros:
 
 
 Provide a token
-Analyze "integrator-vcom": sqp_7dcd169ad0a2a840a04b4b5ffa9e16a98d3f7716
+Analyze "python-sonar-lab": sqp_7dcd169ad0a2a840a04b4b5ffa9e16a98d3f****
 
 
 docker run --rm \
   -e SONAR_HOST_URL="http://localhost:9000" \
-  -e SONAR_LOGIN="sqp_7dcd169ad0a2a840a04b4b5ffa9e16a98d3f7716" \
+  -e SONAR_LOGIN="sqp_7dcd169ad0a2a840a04b4b5ffa9e16a98d3f****" \
   -v "$(pwd):/usr/src" \
   sonarsource/sonar-scanner-cli:latest \
   -Dsonar.projectKey=integrator-vcom \

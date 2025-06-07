@@ -1,0 +1,47 @@
+name: Update Coverage on Sonar
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch para calcular cobertura'
+        required: true
+        default: 'main'
+
+jobs:
+  update-coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout da branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.target_branch }}
+
+      - name: Instalar dependências do sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils bc make docker.io python3.11-venv
+
+      - name: Rodar make sonar (gera coverage + envia para o Sonar)
+        run: make sonar
+
+      - name: Extrair cobertura do coverage.xml
+        id: extract
+        run: |
+          COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
+          PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
+          echo "coverage=$PERCENT" >> $GITHUB_OUTPUT
+
+      - name: Atualizar Quality Gate no SonarQube
+        run: |
+          curl -X POST "$SONAR_URL/api/qualitygates/set_condition" \
+            -u "$SONAR_TOKEN:" \
+            -d "id=$QUALITY_GATE_ID" \
+            -d "metric=coverage" \
+            -d "op=LT" \
+            -d "error=${{ steps.extract.outputs.coverage }}"
+        env:
+          SONAR_URL: https://seu-servidor-sonar
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          QUALITY_GATE_ID: ${{ secrets.SONAR_QG_ID }}
