@@ -99,7 +99,8 @@ jobs:
             exit 1
           fi
 
-          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "$COVERAGE_METRIC" \
+          # Alteração principal: buscar por 'new_coverage' em vez de 'coverage'
+          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "new_coverage" \
             '.conditions[] | select(.metric == $METRIC) | .id')
 
           if [ -z "$CONDITION_ID" ]; then
@@ -113,7 +114,7 @@ jobs:
             "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
             -u "$SONAR_TOKEN:" \
             -d "id=$CONDITION_ID" \
-            -d "metric=$COVERAGE_METRIC" \
+            -d "metric=new_coverage" \
             -d "error=$PERCENT" \
             -d "op=LT")
 
@@ -123,7 +124,7 @@ jobs:
             exit 1
           else
             echo "Quality Gate atualizado com sucesso!"
-            echo "Nova condição: $COVERAGE_METRIC < $PERCENT%"
+            echo "Nova condição: new_coverage < $PERCENT%"
           fi
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
