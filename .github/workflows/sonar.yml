@@ -79,5 +79,5 @@ jobs:
             -d "error=$PERCENT" \
             -d "op=LT"
         env:
-          SONAR_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_URL: ${{ variables.SONAR_URL }}
