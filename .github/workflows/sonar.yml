@@ -8,10 +8,6 @@ on:
         required: true
         default: 'main'
 
-env:
-  DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
-  SONAR_URL: https://holy-pretty-grubworm.ngrok-free.app
-
 jobs:
   update-coverage:
     runs-on: ubuntu-latest
@@ -19,9 +15,9 @@ jobs:
       postgres:
         image: postgres:13
         env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
+          POSTGRES_USER: ${{ vars.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_DB: ${{ vars.DB_NAME }}
         ports:
           - 5432:5432
         options: >-
@@ -38,7 +34,6 @@ jobs:
 
       - name: Configurar ambiente
         run: |
-          # Instala apenas o essencial sem atualizar todos os pacotes
           sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
@@ -50,10 +45,12 @@ jobs:
 
       - name: Verificar PostgreSQL
         run: |
-          timeout 30s bash -c 'until pg_isready -h localhost -p 5432 -U testuser -d testdb; do sleep 2; done'
-          PGPASSWORD=testpass psql -h localhost -U testuser -d testdb -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          timeout 30s bash -c 'until pg_isready -h localhost -p 5432 -U ${{ vars.DB_USER }} -d ${{ vars.DB_NAME }}; do sleep 2; done'
+          PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h localhost -U ${{ vars.DB_USER }} -d ${{ vars.DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - name: Executar testes e cobertura
+        env:
+          DATABASE_URL: postgresql://${{ vars.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/${{ vars.DB_NAME }}
         run: |
           make test
           make coverage
@@ -62,7 +59,8 @@ jobs:
         run: make sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ env.SONAR_URL }}
+          SONAR_HOST_URL: ${{ vars.SONAR_URL }}
+          DATABASE_URL: postgresql://${{ vars.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/${{ vars.DB_NAME }}
 
       - name: Processar cobertura e atualizar Quality Gate
         run: |
@@ -70,10 +68,10 @@ jobs:
           PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
           echo "Cobertura: $PERCENT%"
           
-          CONDITION_ID=$(curl -s "$SONAR_URL/api/qualitygates/show?name=python-sonar-lab" \
+          CONDITION_ID=$(curl -s "${{ vars.SONAR_URL }}/api/qualitygates/show?name=python-sonar-lab" \
             -u "$SONAR_TOKEN:" | jq -r '.conditions[] | select(.metric == "coverage") | .id')
           
-          curl -X POST "$SONAR_URL/api/qualitygates/update_condition" \
+          curl -X POST "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
             -u "$SONAR_TOKEN:" \
             -d "id=$CONDITION_ID" \
             -d "metric=coverage" \
