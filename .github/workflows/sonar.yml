@@ -21,7 +21,12 @@ jobs:
       - name: Instalar dependências do sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxml2-utils bc make docker.io python3.11-venv
+          sudo apt-get install -y libxml2-utils bc make docker.io python3-venv
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'  # ou a versão específica que você precisa
 
       - name: Rodar make sonar (gera coverage + envia para o Sonar)
         run: make sonar
@@ -32,6 +37,7 @@ jobs:
           COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
           PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
           echo "coverage=$PERCENT" >> $GITHUB_OUTPUT
+          echo "Cobertura de código: $PERCENT%"
 
       - name: Atualizar Quality Gate no SonarQube
         run: |
