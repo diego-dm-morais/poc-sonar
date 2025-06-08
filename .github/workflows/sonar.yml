@@ -10,6 +10,7 @@ on:
 
 env:
   DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
+  SONAR_URL: https://holy-pretty-grubworm.ngrok-free.app
 
 jobs:
   update-coverage:
@@ -61,7 +62,7 @@ jobs:
         run: make sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_URL: ${{ variables.SONAR_URL }}
+          SONAR_HOST_URL: ${{ env.SONAR_URL }}
 
       - name: Processar cobertura e atualizar Quality Gate
         run: |
@@ -80,4 +81,3 @@ jobs:
             -d "op=LT"
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_URL: ${{ variables.SONAR_URL }}
