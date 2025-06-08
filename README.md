@@ -27,7 +27,11 @@ Aqui está uma versão melhorada da documentação, mais organizada e com inform
    - Client ID
    - Client Secret
 
+
+
 ## 3. Configuração no SonarQube
+Restart Server
+
 Acesse a seção de segurança do SonarQube:
 - URL: `http://localhost:9000/admin/settings?category=security`
 

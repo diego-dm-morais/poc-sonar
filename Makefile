@@ -3,6 +3,7 @@ export POSTGRES_USER := $(shell echo $(DATABASE_URL) | sed -E 's|postgresql://([
 export POSTGRES_PASSWORD := $(shell echo $(DATABASE_URL) | sed -E 's|postgresql://[^:]+:([^@]+)@.*|\1|')
 export POSTGRES_DB := $(shell echo $(DATABASE_URL) | sed -E 's|.*/([^/?]+).*|\1|')
 export SONAR_TOKEN ?= $(shell grep SONAR_TOKEN pytest.ini | cut -d= -f2 | tr -d ' ')
+
 export VIRTUALENV := $(PWD)/.venv
 
 .venv:
