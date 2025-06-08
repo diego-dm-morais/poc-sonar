@@ -8,6 +8,10 @@ on:
         required: true
         default: 'main'
 
+env:
+  QUALITY_GATE_NAME: "python-sonar-lab"
+  COVERAGE_METRIC: "coverage"
+
 jobs:
   update-coverage:
     runs-on: ubuntu-latest
@@ -34,7 +38,7 @@ jobs:
 
       - name: Configurar ambiente
         run: |
-          sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client
+          sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client jq
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
@@ -64,18 +68,51 @@ jobs:
 
       - name: Processar cobertura e atualizar Quality Gate
         run: |
+          # Extrair taxa de cobertura do XML
           COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
           PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
           echo "Cobertura: $PERCENT%"
-          
-          CONDITION_ID=$(curl -s "${{ vars.SONAR_URL }}/api/qualitygates/show?name=python-sonar-lab" \
-            -u "$SONAR_TOKEN:" | jq -r '.conditions[] | select(.metric == "coverage") | .id')
-          
-          curl -X POST "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
+
+          # Obter detalhes do Quality Gate usando o nome
+          QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
+            "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
+            -u "$SONAR_TOKEN:")
+
+          # Verificar se a resposta contém erro
+          if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Erro ao buscar Quality Gate:"
+            echo "$QG_RESPONSE" | jq .
+            exit 1
+          fi
+
+          # Extrair ID da condição de cobertura
+          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "$COVERAGE_METRIC" \
+            '.conditions[] | select(.metric == $METRIC) | .id')
+
+          if [ -z "$CONDITION_ID" ]; then
+            echo "Erro: Condição de cobertura não encontrada no Quality Gate"
+            echo "Conditions disponíveis:"
+            echo "$QG_RESPONSE" | jq '.conditions'
+            exit 1
+          fi
+
+          # Atualizar condição no Quality Gate
+          UPDATE_RESPONSE=$(curl -s -X POST -H "ngrok-skip-browser-warning: true" \
+            "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
             -u "$SONAR_TOKEN:" \
             -d "id=$CONDITION_ID" \
-            -d "metric=coverage" \
+            -d "metric=$COVERAGE_METRIC" \
             -d "error=$PERCENT" \
-            -d "op=LT"
+            -d "op=LT")
+
+          # Verificar resposta da atualização
+          if echo "$UPDATE_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Erro ao atualizar Quality Gate:"
+            echo "$UPDATE_RESPONSE" | jq .
+            exit 1
+          else
+            echo "Quality Gate atualizado com sucesso!"
+            echo "Nova condição: $COVERAGE_METRIC < $PERCENT%"
+          fi
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
