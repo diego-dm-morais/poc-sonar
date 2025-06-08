@@ -12,8 +12,6 @@ env:
   QUALITY_GATE_NAME: "python-sonar-lab"
   COVERAGE_METRIC: "coverage"
   SONAR_PROJECT_KEY: "python-sonar-lab"
-  SONAR_SCANNER_VERSION: "4.8.0.2856"
-  JAVA_VERSION: "11"
 
 jobs:
   update-coverage:
@@ -39,16 +37,10 @@ jobs:
         with:
           ref: ${{ github.event.inputs.target_branch }}
 
-      - name: Configurar Java
-        uses: actions/setup-java@v3
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-
       - name: Configurar ambiente
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client jq unzip
+          sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client jq
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
@@ -56,23 +48,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
-      - name: Cache SonarScanner
-        uses: actions/cache@v3
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar-scanner-${{ env.SONAR_SCANNER_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-sonar-scanner-
-
-      - name: Instalar SonarScanner
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux.zip
-          unzip sonar-scanner-cli-*.zip
-          sudo mv sonar-scanner-$SONAR_SCANNER_VERSION-linux/bin/sonar-scanner /usr/local/bin/
-          sudo mv sonar-scanner-$SONAR_SCANNER_VERSION-linux/lib/sonar-scanner* /usr/local/lib/
-          rm -rf sonar-scanner-*
 
       - name: Verificar PostgreSQL
         run: |
@@ -90,15 +65,16 @@ jobs:
         run: |
           sed -i 's|<source>.*</source>|<source>app</source>|g' coverage.xml
           
-          echo "Verificando instalação do Java:"
-          java -version
-          
-          echo "Executando SonarScanner..."
-          sonar-scanner \
+          docker run --rm \
+            -v $(pwd):/usr/src \
+            -w /usr/src \
+            -e SONAR_HOST_URL="${{ vars.SONAR_URL }}" \
+            -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" \
+            sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=$SONAR_PROJECT_KEY \
             -Dsonar.sources=. \
-            -Dsonar.host.url=${{ vars.SONAR_URL }} \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.host.url="${{ vars.SONAR_URL }}" \
+            -Dsonar.login="${{ secrets.SONAR_TOKEN }}" \
             -Dsonar.python.coverage.reportPaths=coverage.xml \
             -Dsonar.scm.disabled=true \
             -Dsonar.verbose=true \
