@@ -25,6 +25,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        # Garante que o container esteja pronto antes dos testes
+        steps:
+          - name: Wait for PostgreSQL
+            run: |
+              for i in {1..10}; do
+                if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
+                  break
+                fi
+                sleep 2
+              done
 
     steps:
       - name: Checkout da branch
@@ -35,9 +45,7 @@ jobs:
       - name: Instalar dependências do sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxml2-utils bc make python3-venv
-          sudo apt-get remove -y containerd
-          sudo apt-get install -y docker.io
+          sudo apt-get install -y libxml2-utils bc make postgresql-client python3-venv
 
       - name: Configurar Python 3.11
         uses: actions/setup-python@v4
@@ -50,15 +58,20 @@ jobs:
           python -m pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Executar testes
+        env:
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
         run: make test
 
       - name: Gerar relatório de cobertura
+        env:
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
         run: make coverage
 
       - name: Executar análise SonarQube
         run: make sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
 
       - name: Extrair cobertura do coverage.xml
         id: extract
