@@ -64,7 +64,7 @@ open-coverage:
 # 		-Dsonar.login=$(SONAR_TOKEN)
 
 
-sonar: coverage
+sonar:
 	@echo "$(PWD)"
 	@docker run --rm -it \
 		-v $(PWD):/usr/src \
