@@ -25,15 +25,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        steps:
-          - name: Wait for PostgreSQL
-            run: |
-              for i in {1..10}; do
-                if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
-                  break
-                fi
-                sleep 2
-              done
 
     steps:
       - name: Checkout da branch
@@ -50,6 +41,15 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
+      - name: Esperar PostgreSQL ficar pronto
+        run: |
+          for i in {1..10}; do
+            if pg_isready -h localhost -p 5432 -U testuser -d testdb; then
+              break
+            fi
+            sleep 2
+          done
 
       - name: Instalar dependências do projeto
         run: |
@@ -82,17 +82,27 @@ jobs:
 
       - name: Atualizar Quality Gate no SonarQube
         run: |
-          # Primeiro obtemos o ID da condição existente
-          CONDITION_ID=$(curl -s "$SONAR_URL/api/qualitygates/show?name=python-sonar-lab" \
-            -u "$SONAR_TOKEN:" | jq -r '.conditions[] | select(.metric == "coverage") | .id')
+          # Primeiro obtemos informações detalhadas do Quality Gate
+          QUALITY_GATE_DATA=$(curl -s "$SONAR_URL/api/qualitygates/show?name=python-sonar-lab" -u "$SONAR_TOKEN:")
           
-          # Depois atualizamos a condição
+          # Extraímos o ID da condição de coverage
+          CONDITION_ID=$(echo "$QUALITY_GATE_DATA" | jq -r '.conditions[] | select(.metric == "coverage") | .id')
+          
+          if [ -z "$CONDITION_ID" ]; then
+            echo "Erro: Não foi possível encontrar a condição de coverage no Quality Gate"
+            exit 1
+          fi
+          
+          # Formatamos o valor da cobertura
+          COVERAGE_PERCENT=$(echo "${{ steps.extract.outputs.coverage }} * 100" | bc -l | awk '{printf "%.1f", $0}')
+          
+          # Atualizamos a condição
           curl -X POST "$SONAR_URL/api/qualitygates/update_condition" \
             -u "$SONAR_TOKEN:" \
             -d "id=$CONDITION_ID" \
             -d "metric=coverage" \
-            -d "op=LT" \
-            -d "error=${{ steps.extract.outputs.coverage }}"
+            -d "error=$COVERAGE_PERCENT" \
+            -d "op=LT"
         env:
           SONAR_URL: https://seu-servidor-sonar
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
