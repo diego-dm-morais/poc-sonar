@@ -1,45 +1,129 @@
-- name: Processar cobertura e atualizar Quality Gate
-  run: |
-    COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
-    PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
-    echo "Cobertura: $PERCENT%"
+name: Update Coverage on Sonar
 
-    QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
-      "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
-      -u "$SONAR_TOKEN:")
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch para calcular cobertura'
+        required: true
+        default: 'main'
 
-    if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
-      echo "Erro ao buscar Quality Gate:"
-      echo "$QG_RESPONSE" | jq .
-      exit 1
-    fi
+env:
+  QUALITY_GATE_NAME: "python-sonar-lab"
+  COVERAGE_METRIC: "coverage"
+  SONAR_PROJECT_KEY: "python-sonar-lab"
 
-    # Alteração principal: buscar por 'new_coverage' em vez de 'coverage'
-    CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "new_coverage" \
-      '.conditions[] | select(.metric == $METRIC) | .id')
+jobs:
+  update-coverage:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: ${{ vars.DB_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          POSTGRES_DB: ${{ vars.DB_NAME }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 10
 
-    if [ -z "$CONDITION_ID" ]; then
-      echo "Erro: Condição de cobertura não encontrada"
-      echo "Conditions disponíveis:"
-      echo "$QG_RESPONSE" | jq '.conditions'
-      exit 1
-    fi
+    steps:
+      - name: Checkout da branch
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.inputs.target_branch }}
 
-    UPDATE_RESPONSE=$(curl -s -X POST -H "ngrok-skip-browser-warning: true" \
-      "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
-      -u "$SONAR_TOKEN:" \
-      -d "id=$CONDITION_ID" \
-      -d "metric=new_coverage" \
-      -d "error=$PERCENT" \
-      -d "op=LT")
+      - name: Configurar ambiente
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-upgrade libxml2-utils bc make postgresql-client jq
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
 
-    if echo "$UPDATE_RESPONSE" | jq -e '.errors' > /dev/null; then
-      echo "Erro ao atualizar Quality Gate:"
-      echo "$UPDATE_RESPONSE" | jq .
-      exit 1
-    else
-      echo "Quality Gate atualizado com sucesso!"
-      echo "Nova condição: new_coverage < $PERCENT%"
-    fi
-  env:
-    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Verificar PostgreSQL
+        run: |
+          timeout 30s bash -c 'until pg_isready -h localhost -p 5432 -U ${{ vars.DB_USER }} -d ${{ vars.DB_NAME }}; do sleep 2; done'
+          PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h localhost -U ${{ vars.DB_USER }} -d ${{ vars.DB_NAME }} -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Executar testes e cobertura
+        env:
+          DATABASE_URL: postgresql://${{ vars.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/${{ vars.DB_NAME }}
+        run: |
+          make test
+          make coverage
+
+      - name: Executar análise SonarQube
+        run: |
+          sed -i 's|<source>.*</source>|<source>app</source>|g' coverage.xml
+          
+          docker run --rm \
+            -v $(pwd):/usr/src \
+            -w /usr/src \
+            -e SONAR_HOST_URL="${{ vars.SONAR_URL }}" \
+            -e SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}" \
+            sonarsource/sonar-scanner-cli \
+            -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+            -Dsonar.sources=. \
+            -Dsonar.host.url="${{ vars.SONAR_URL }}" \
+            -Dsonar.login="${{ secrets.SONAR_TOKEN }}" \
+            -Dsonar.python.coverage.reportPaths=coverage.xml \
+            -Dsonar.scm.disabled=true \
+            -Dsonar.verbose=true \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.python.version=3.11
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Processar cobertura e atualizar Quality Gate
+        run: |
+          COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
+          PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
+          echo "Cobertura: $PERCENT%"
+
+          QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
+            "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
+            -u "$SONAR_TOKEN:")
+
+          if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Erro ao buscar Quality Gate:"
+            echo "$QG_RESPONSE" | jq .
+            exit 1
+          fi
+
+          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "$COVERAGE_METRIC" \
+            '.conditions[] | select(.metric == $METRIC) | .id')
+
+          if [ -z "$CONDITION_ID" ]; then
+            echo "Erro: Condição de cobertura não encontrada"
+            echo "Conditions disponíveis:"
+            echo "$QG_RESPONSE" | jq '.conditions'
+            exit 1
+          fi
+
+          UPDATE_RESPONSE=$(curl -s -X POST -H "ngrok-skip-browser-warning: true" \
+            "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
+            -u "$SONAR_TOKEN:" \
+            -d "id=$CONDITION_ID" \
+            -d "metric=$COVERAGE_METRIC" \
+            -d "error=$PERCENT" \
+            -d "op=LT")
+
+          if echo "$UPDATE_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "Erro ao atualizar Quality Gate:"
+            echo "$UPDATE_RESPONSE" | jq .
+            exit 1
+          else
+            echo "Quality Gate atualizado com sucesso!"
+            echo "Nova condição: $COVERAGE_METRIC < $PERCENT%"
+          fi
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
