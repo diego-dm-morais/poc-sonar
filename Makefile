@@ -3,7 +3,7 @@ export POSTGRES_USER := $(shell echo $(DATABASE_URL) | sed -E 's|postgresql://([
 export POSTGRES_PASSWORD := $(shell echo $(DATABASE_URL) | sed -E 's|postgresql://[^:]+:([^@]+)@.*|\1|')
 export POSTGRES_DB := $(shell echo $(DATABASE_URL) | sed -E 's|.*/([^/?]+).*|\1|')
 export SONAR_TOKEN ?= $(shell grep SONAR_TOKEN pytest.ini | cut -d= -f2 | tr -d ' ')
-export SONAR_HOST_URL ?= http://host.docker.internal:9000
+export SONAR_URL ?= http://host.docker.internal:9000
 
 export VIRTUALENV := $(PWD)/.venv
 
@@ -75,7 +75,7 @@ sonar:
 		-v $(PWD):/usr/src \
 		-w /usr/src \
 		--add-host=host.docker.internal:host-gateway \
-		-e SONAR_HOST_URL="$(SONAR_HOST_URL)" \
+		-e SONAR_HOST_URL="$(SONAR_URL)" \
 		-e SONAR_TOKEN="$(SONAR_TOKEN)" \
 		sonarsource/sonar-scanner-cli \
 		sh -c "sed -i 's|<source>.*</source>|<source>app</source>|g' coverage.xml && sonar-scanner -Dsonar.verbose=true -Dsonar.scm.disabled=true"
