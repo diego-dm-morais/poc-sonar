@@ -10,7 +10,7 @@ on:
 
 env:
   QUALITY_GATE_NAME: "python-sonar-lab"
-  COVERAGE_METRIC: "coverage"
+  COVERAGE_METRIC: "new_coverage"  # Métrica corrigida para new_coverage
   SONAR_PROJECT_KEY: "python-sonar-lab"
 
 jobs:
@@ -80,6 +80,53 @@ jobs:
             -Dsonar.verbose=true \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.python.version=3.11
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      - name: Processar cobertura e atualizar Quality Gate
+        run: |
+          # Extrai cobertura do XML
+          COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
+          PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
+          echo "Cobertura calculada: $PERCENT%"
+
+          # Obtém informações do Quality Gate
+          QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
+            "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
+            -u "${{ secrets.SONAR_TOKEN }}:")
+
+          # Verifica erros na resposta
+          if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "🚨 Erro ao buscar Quality Gate:"
+            echo "$QG_RESPONSE" | jq .
+            exit 1
+          fi
+
+          # Extrai o ID da condição de cobertura
+          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "$COVERAGE_METRIC" \
+            '.conditions[] | select(.metric == $METRIC) | .id')
+
+          if [ -z "$CONDITION_ID" ]; then
+            echo "🚨 Erro: Condição '$COVERAGE_METRIC' não encontrada no Quality Gate"
+            echo "Conditions disponíveis:"
+            echo "$QG_RESPONSE" | jq '.conditions[] | {metric, id}'
+            exit 1
+          fi
+
+          echo "Atualizando condição ID $CONDITION_ID para $COVERAGE_METRIC < $PERCENT%"
+
+          # Atualiza a condição no Quality Gate
+          UPDATE_RESPONSE=$(curl -s -X POST \
+            "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
+            -u "${{ secrets.SONAR_TOKEN }}:" \
+            -d "id=$CONDITION_ID" \
+            -d "metric=$COVERAGE_METRIC" \
+            -d "error=$PERCENT" \
+            -d "op=LT")
+
+          if echo "$UPDATE_RESPONSE" | jq -e '.errors' > /dev/null; then
+            echo "🚨 Erro ao atualizar Quality Gate:"
+            echo "$UPDATE_RESPONSE" | jq .
+            exit 1
+          else
+            echo "✅ Quality Gate atualizado com sucesso!"
+            echo "Nova condição: $COVERAGE_METRIC < $PERCENT%"
+          fi
