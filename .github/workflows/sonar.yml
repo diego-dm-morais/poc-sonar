@@ -10,7 +10,7 @@ on:
 
 env:
   QUALITY_GATE_NAME: "python-sonar-lab"
-  COVERAGE_METRIC: "new_coverage"  # Métrica corrigida para new_coverage
+  COVERAGE_METRIC: "coverage"
   SONAR_PROJECT_KEY: "python-sonar-lab"
 
 jobs:
@@ -80,53 +80,51 @@ jobs:
             -Dsonar.verbose=true \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.python.version=3.11
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Processar cobertura e atualizar Quality Gate
         run: |
-          # Extrai cobertura do XML
           COVERAGE=$(xmllint --xpath 'string(/coverage/@line-rate)' coverage.xml)
           PERCENT=$(printf "%.0f" "$(echo "$COVERAGE * 100" | bc -l)")
-          echo "Cobertura calculada: $PERCENT%"
+          echo "Cobertura: $PERCENT%"
 
-          # Obtém informações do Quality Gate
           QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
             "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
-            -u "${{ secrets.SONAR_TOKEN }}:")
+            -u "$SONAR_TOKEN:")
 
-          # Verifica erros na resposta
           if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
-            echo "🚨 Erro ao buscar Quality Gate:"
+            echo "Erro ao buscar Quality Gate:"
             echo "$QG_RESPONSE" | jq .
             exit 1
           fi
 
-          # Extrai o ID da condição de cobertura
-          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "$COVERAGE_METRIC" \
+          # Alteração principal: buscar por 'new_coverage' em vez de 'coverage'
+          CONDITION_ID=$(echo "$QG_RESPONSE" | jq -r --arg METRIC "new_coverage" \
             '.conditions[] | select(.metric == $METRIC) | .id')
 
           if [ -z "$CONDITION_ID" ]; then
-            echo "🚨 Erro: Condição '$COVERAGE_METRIC' não encontrada no Quality Gate"
+            echo "Erro: Condição de cobertura não encontrada"
             echo "Conditions disponíveis:"
-            echo "$QG_RESPONSE" | jq '.conditions[] | {metric, id}'
+            echo "$QG_RESPONSE" | jq '.conditions'
             exit 1
           fi
 
-          echo "Atualizando condição ID $CONDITION_ID para $COVERAGE_METRIC < $PERCENT%"
-
-          # Atualiza a condição no Quality Gate
-          UPDATE_RESPONSE=$(curl -s -X POST \
+          UPDATE_RESPONSE=$(curl -s -X POST -H "ngrok-skip-browser-warning: true" \
             "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
-            -u "${{ secrets.SONAR_TOKEN }}:" \
+            -u "$SONAR_TOKEN:" \
             -d "id=$CONDITION_ID" \
-            -d "metric=$COVERAGE_METRIC" \
+            -d "metric=new_coverage" \
             -d "error=$PERCENT" \
             -d "op=LT")
 
           if echo "$UPDATE_RESPONSE" | jq -e '.errors' > /dev/null; then
-            echo "🚨 Erro ao atualizar Quality Gate:"
+            echo "Erro ao atualizar Quality Gate:"
             echo "$UPDATE_RESPONSE" | jq .
             exit 1
           else
-            echo "✅ Quality Gate atualizado com sucesso!"
-            echo "Nova condição: $COVERAGE_METRIC < $PERCENT%"
+            echo "Quality Gate atualizado com sucesso!"
+            echo "Nova condição: new_coverage < $PERCENT%"
           fi
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
