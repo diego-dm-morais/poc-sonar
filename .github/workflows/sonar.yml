@@ -91,7 +91,7 @@ jobs:
           # Obtém informações do Quality Gate
           QG_RESPONSE=$(curl -s -H "ngrok-skip-browser-warning: true" \
             "${{ vars.SONAR_URL }}/api/qualitygates/show?name=$QUALITY_GATE_NAME" \
-            -u "${{ secrets.SONAR_TOKEN }}:")
+            -u "${{ secrets.SONAR_TOKEN_ADMIN }}:")
 
           # Verifica erros na resposta
           if echo "$QG_RESPONSE" | jq -e '.errors' > /dev/null; then
@@ -116,7 +116,7 @@ jobs:
           # Atualiza a condição no Quality Gate
           UPDATE_RESPONSE=$(curl -s -X POST \
             "${{ vars.SONAR_URL }}/api/qualitygates/update_condition" \
-            -u "${{ secrets.SONAR_TOKEN }}:" \
+            -u "${{ secrets.SONAR_TOKEN_ADMIN }}:" \
             -d "id=$CONDITION_ID" \
             -d "metric=$COVERAGE_METRIC" \
             -d "error=$PERCENT" \
